@@ -318,8 +318,8 @@ const LUX_FLOOR = 1.0;
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 
 // The one unit that ever gets a meter reading typed in directly -- it stays
-// permanently on the bench for exactly this reason (see CLAUDE.md's
-// reference-unit policy). Every other sensor calibrates against *this one*
+// permanently on the bench for exactly this reason (the reference-unit
+// policy, described in the README). Every other sensor calibrates against *this one*
 // instead, via its cct_cal/duv_cal, so no meter is needed for them.
 const REFERENCE_SENSOR_ID = "sensor-00-calibration-source";
 

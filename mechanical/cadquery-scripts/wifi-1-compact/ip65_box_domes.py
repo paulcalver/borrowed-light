@@ -115,9 +115,9 @@ HARDWARE (build notes)
   spots, but real assembly has enough slack that x6 seats fine
   everywhere except the clamp ring). Clamp ring stays the one
   exception at M2.5x4 -- its ceiling is a hard 5.0mm, confirmed
-  physically bottoming out at anything longer. Full stack-up math and
-  the standardisation rationale are in mechanical/build-reference.md,
-  not repeated here.
+  physically bottoming out at anything longer. The full stack-up math
+  behind the standardisation is kept with the build notes, not repeated
+  here.
   4x  M3 heat-set inserts (pillars) + M3x10 button + NYLON SEALING
       WASHER. The lid screws sit inside the seal line on a sky-facing
       lid, so sealing washers are mandatory, not optional.
@@ -145,17 +145,17 @@ HARDWARE (build notes)
 
 VERIFY BEFORE COMMITTING PLASTIC (marked in parameters)
   - BQ24074 and MAX17048 hole pitches are now taken from Adafruit's own
-    STEP/dimensioned-drawing files in mechanical/adafruit-cad-files/
-    (cross-checked against adafruit_BQ24074.png), not datasheet guesses.
+    STEP/dimensioned-drawing files for those boards, not datasheet
+    guesses.
     Still worth a caliper check against the physical boards before
     printing, since the reference files could be a different revision.
-  - QT Py snap mount (#6183) hole pattern is measured from
-    QTPy_Snap_Mount_SLA_V2.stl in the same folder.
+  - QT Py snap mount (#6183) hole pattern is measured from Adafruit's
+    own STL for the part (QTPy_Snap_Mount_SLA_V2).
   - Breather vent thread size (M12 assumed).
   - Dome batch dimensions if a new batch is ordered.
 
-pole_mount_params.py migration to the rail-profile standard is a
-separate follow-up task; this file is self-contained for now.
+This file is self-contained: all enclosure and bracket geometry lives
+here.
 """
 
 import math
@@ -519,8 +519,8 @@ BOSS_D = 8.6          # was 6.0, then 8.0 -- same insert-bulge issue and
 BOSS_H = 4.0
 
 # board registry: outline (W across sled, L along sled) + hole pitch.
-# Measured from Adafruit's own CAD, not datasheet guesses -- see
-# mechanical/adafruit-cad-files/. Re-check with calipers before printing.
+# Measured from Adafruit's own published CAD for each board, not from
+# datasheet guesses. Re-check with calipers before printing.
 BQ_W, BQ_L, BQ_PX, BQ_PY = 33.02, 38.1, 27.94, 33.02
     # Adafruit_BQ24074_V5.step, confirmed against adafruit_BQ24074.png
     # (1.50 x 1.30 in outline, 1.30 x 1.10 in pitch; W/L and PX/PY
@@ -544,7 +544,7 @@ MAX_HOLE_DY = -7.62
 
 # QT Py: the bare board has no mounting holes, so it rides in
 # Adafruit's snap mount (#6183) instead of the old zip-tied tray.
-# Measured from QTPy_Snap_Mount_SLA_V2.stl (native footprint 42 x 28,
+# Measured from Adafruit's QTPy_Snap_Mount_SLA_V2 STL (native footprint 42 x 28,
 # 4x M3 holes at 34 x 20 pitch). Native orientation (long axis ACROSS
 # the sled) puts the USB-C port at the top for easy(ish) access; an
 # earlier revision rotated this 90 deg to dodge the deck-ledge
@@ -673,8 +673,8 @@ ANT_HOLE_Z = 20.0     # off the floor -- raised from an initial ~12-15mm
 
 # ---- on/off switch (-Y wall, Cellular-1) -----------------------------
 # Adafruit #916 16mm rugged metal on/off switch, "kill load only" --
-# splices into BQ24074 LOAD/OUT between it and the QT Py 5V pin (see
-# CLAUDE.md). Position agreed 2026-07-23 via an interference sweep
+# splices into BQ24074 LOAD/OUT between it and the QT Py 5V pin.
+# Position agreed 2026-07-23 via an interference sweep
 # against sled_refs_asm/cradle_asm: the -Y wall's only obstruction is
 # the BQ24074 DC-jack keepout (z~30-45, x~-8..+20), well clear of here.
 SWITCH_D = 16.0        # not cut yet -- the size to hand-drill later.
@@ -2194,7 +2194,7 @@ for zc in TUN_ZC:
 # spec, holds on friction alone -- confirmed by Paul on a good print.
 # The thumbscrew catch this bracket used to have was removed 2026-07-24
 # after two failed redesigns chasing head clearance against the box's
-# own wall (see CLAUDE.md); simplest fix was dropping it entirely.
+# own wall; simplest fix was dropping it entirely.
 
 # =====================================================================
 # 14b. WALL-MOUNT BRACKET

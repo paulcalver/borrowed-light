@@ -43,9 +43,9 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "readings.db")
 
 # Over-the-air firmware: the device pulls new code.py from here on its next
 # check, so flashing works from anywhere (no home-network access needed) — the
-# device makes the outbound call, nothing connects in to it. Files are staged
-# with publish_firmware.py and served over the existing HTTPS/Nginx setup, so
-# there is no new firewall/port to open. If OTA_TOKEN is set, both routes
+# device makes the outbound call, nothing connects in to it. Stage a code.py
+# and a manifest.json in FIRMWARE_DIR below; they are served over the existing
+# HTTPS/Nginx setup, so there is no new firewall/port to open. If OTA_TOKEN is set, both routes
 # require a matching ?token=; leave it unset to serve the firmware openly.
 FIRMWARE_DIR = os.path.join(os.path.dirname(__file__), "firmware")
 OTA_TOKEN = os.environ.get("OTA_TOKEN")

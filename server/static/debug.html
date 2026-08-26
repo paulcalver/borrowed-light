@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>CCT - DEBUG</title>
+<style>
+  html, body {
+    margin: 0;
+  }
+  body {
+    background: #fff;
+    color: #111;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden; /* belt-and-braces: no fixed-width element should ever be able to force sideways panning on mobile */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* flex-start (the default), not center: centering a flex container whose
+       content is taller than the viewport pushes the overflow equally off
+       BOTH edges, and most browsers won't let you scroll to the part pushed
+       above the top -- content just becomes unreachable. Laying out from the
+       top keeps everything reachable by normal scrolling regardless of how
+       tall the page gets (this broke for real once the comparison strip
+       pushed total height past one screen, 2026-07-29). */
+    justify-content: flex-start;
+    gap: 24px;
+    padding: 24px 12px;
+    box-sizing: border-box;
+    width: 100%;
+  }
+  /* --- Compare strip: large flush swatches for whichever sensors are
+     checked in the table below. Cell count is driven entirely by the
+     checkbox state, so this scales to any number of sensors -- nothing here
+     is tuned to a fixed sensor count (the old version hardcoded max-width
+     to line up with exactly two 260px columns; that assumption is gone). */
+  #compare {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  #compare-label {
+    font-size: 11px;
+    color: #999;
+    text-align: center;
+  }
+  #compare-swatches {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden; /* rounds the outer corners; joins between cells stay a sharp, flush line */
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  }
+  .compare-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 0;
+    min-width: 0; /* let cells actually shrink below their content's intrinsic width on narrow screens, instead of overflowing */
+  }
+  .compare-cell.hidden {
+    display: none; /* unchecked in the table -- removed from the flex row entirely, remaining cells reflow to fill the space */
+  }
+  .compare-cell-colour {
+    width: 100%;
+    aspect-ratio: 1 / 1; /* stays square as it shrinks, rather than a fixed px size that overflows on mobile */
+    max-height: 260px;
+  }
+  .compare-cell-label {
+    font-size: 11px;
+    color: #999;
+    padding: 6px 0 2px;
+    background: #fff;
+    text-align: center;
+  }
+  .compare-cell-calnote {
+    font-size: 10px;
+    color: #bbb;
+    padding-bottom: 6px;
+    background: #fff;
+    text-align: center;
+  }
+
+  /* --- Main sensor table. One row per sensor, so adding a 10th or 50th
+     sensor just adds a row -- the layout never has to reflow or wrap the
+     way a row of fixed-width columns would. Wrapped in a scrolling div
+     rather than letting the table itself force the page wide, so a phone
+     gets a horizontal scrollbar on the table only, not the whole page. */
+  #table-scroll {
+    align-self: flex-start; /* left-aligned rather than centered like the rest of the page -- a wide table centered in a much wider viewport just reads as a lot of dead space on both sides */
+    width: 94%;
+    margin-left: 3%; /* the 3% left margin plus the 94% width leaves a matching 3% gutter on the right too */
+    overflow-x: auto;
+  }
+  table#sensors {
+    width: 100%;
+    min-width: 880px; /* below this the columns get too cramped to read; the scroll container takes over instead of squeezing them */
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  #sensors th, #sensors td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    vertical-align: top;
+  }
+  #sensors thead th {
+    font-size: 11px;
+    color: #999;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  #sensors td.col-sensor {
+    white-space: nowrap;
+  }
+  .sensor-id {
+    font-weight: 600;
+  }
+  .sensor-sublabel {
+    font-size: 11px;
+    color: #999;
+  }
+  .cct {
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .cal-note {
+    font-size: 11px;
+    color: #999;
+  }
+  .colour-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .colour-chip {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: #eee;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  }
+  .colour-chip-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .hex {
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    color: #555;
+  }
+  .swatch-cal-note {
+    font-size: 10px;
+    color: #999;
+  }
+  .tint, .diag, .battery, .solar {
+    font-size: 12px;
+    color: #444;
+    font-variant-numeric: tabular-nums;
+  }
+  .diag .warn, .battery .warn {
+    color: #c00;
+    font-weight: 600;
+  }
+  .time {
+    font-size: 11px;
+    color: #999;
+    white-space: nowrap;
+  }
+  /* Live/stale badge next to the last-reading time. Only the stale state
+     gets a colour -- a fresh reading shouldn't visually compete with the
+     actual data, it should just look unremarkable. */
+  .row-status {
+    font-size: 11px;
+    white-space: nowrap;
+    color: #999;
+  }
+  .row-status.stale {
+    color: #c00;
+    font-weight: 700;
+    background: rgba(200, 0, 0, 0.08);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  #status {
+    font-size: 12px;
+    color: #999;
+  }
+
+  /* --- Calibration: collapsed to a one-line status by default so a table
+     with many sensors doesn't get overrun by the busiest per-sensor
+     control; expands into a full-width row underneath only on request. */
+  .calib-status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .calib-toggle {
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  tr.calib-detail-row.hidden {
+    display: none;
+  }
+  tr.calib-detail-row td {
+    background: #fafafa;
+  }
+  .calib-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    max-width: 640px;
+  }
+  .calib-form input {
+    font-size: 12px;
+    padding: 4px 6px;
+    box-sizing: border-box;
+  }
+  .calib-form input.calib-cct,
+  .calib-form input.calib-duv {
+    width: 120px;
+  }
+  .calib-form input.calib-note {
+    width: 220px;
+  }
+  .calib-buttons {
+    display: flex;
+    gap: 4px;
+  }
+  .calib-buttons button {
+    font-size: 12px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .calib-msg {
+    font-size: 11px;
+    min-height: 14px;
+    flex-basis: 100%;
+  }
+  .calib-msg.ok { color: #0a0; }
+  .calib-msg.err { color: #c00; }
+  #calib-token-row {
+    font-size: 12px;
+    color: #999;
+  }
+  #calib-token-row input {
+    font-size: 12px;
+    padding: 2px 6px;
+    width: 140px;
+  }
+</style>
+</head>
+<body>
+
+<div id="compare">
+  <div id="compare-label">Side by side, no gap — for judging how close the hues actually are</div>
+  <div id="compare-swatches"></div>
+</div>
+
+<div id="table-scroll">
+  <table id="sensors">
+    <thead>
+      <tr>
+        <th>Compare</th>
+        <th>Sensor</th>
+        <th>CCT</th>
+        <th>Colour</th>
+        <th>Tint (Duv)</th>
+        <th>Diagnostics</th>
+        <th>Battery</th>
+        <th>Solar</th>
+        <th>Last reading</th>
+        <th>Status</th>
+        <th>Calibration</th>
+      </tr>
+    </thead>
+    <tbody id="sensors-body"><!-- two <tr> per registered sensor (data row + collapsible calibration row), built by JS --></tbody>
+  </table>
+</div>
+
+<div id="status">—</div>
+
+<div id="calib-token-row">
+  Lit Duo 1 calibration token (leave blank if none set):
+  <input id="calib-token" type="password" autocomplete="off" />
+</div>
+
+<script>
+// Served from the backend itself, so the API is same-origin: a relative path
+// works on the Droplet and on localhost, with no CORS.
+const API = "";  // same-origin; requests go to /api/...
+
+// Below this lux the signal is near the sensor's noise floor and the measured
+// chromaticity is unreliable, so the swatch shows "night" rather than a vivid
+// noise colour. Matches LUX_FLOOR in the frontend (main.js).
+const LUX_FLOOR = 1.0;
+
+// Above this age, a sensor's last reading is flagged red rather than just
+// shown as a timestamp. Tuned for WiFi-1's 30s-300s publish cadence -- a
+// unit on Cellular-1's ~30 min cadence (not deployed yet) would sit
+// permanently stale under this same flat threshold; revisit once that
+// track has a sensor registered.
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+
+// The one unit that ever gets a meter reading typed in directly -- it stays
+// permanently on the bench for exactly this reason (see CLAUDE.md's
+// reference-unit policy). Every other sensor calibrates against *this one*
+// instead, via its cct_cal/duv_cal, so no meter is needed for them.
+const REFERENCE_SENSOR_ID = "sensor-00-calibration-source";
+
+const sensorsBodyEl = document.getElementById("sensors-body");
+const statusEl = document.getElementById("status");
+const compareSwatchesEl = document.getElementById("compare-swatches");
+const compareLabelEl = document.getElementById("compare-label");
+
+// Measured CIE x,y chromaticity -> sRGB: the true colour the sensor saw,
+// including the green/magenta tint (Duv) that a single Kelvin number discards.
+// Brightness is normalised away so this is a pure hue+tint chip.
+function xyToRgb(x, y) {
+  if (!(y > 0)) return [0, 0, 0];
+  const X = x / y;
+  const Y = 1;
+  const Z = (1 - x - y) / y;
+  // Linear sRGB from XYZ (D65 primaries).
+  let r =  3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+  let g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+  let b =  0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+  // Clamp out-of-gamut negatives, then normalise so the brightest channel is 1.
+  r = Math.max(0, r); g = Math.max(0, g); b = Math.max(0, b);
+  const peak = Math.max(r, g, b);
+  if (peak > 0) { r /= peak; g /= peak; b /= peak; }
+  const gamma = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+  const to255 = (c) => Math.max(0, Math.min(255, Math.round(gamma(c) * 255)));
+  return [to255(r), to255(g), to255(b)];
+}
+
+function rgbToHex([r, g, b]) {
+  const h = (v) => v.toString(16).padStart(2, "0");
+  return "#" + h(r) + h(g) + h(b);
+}
+
+// Recomputed against the current time on every poll tick (not just when a
+// new reading arrives), so a sensor that's gone quiet visibly ages into
+// "Stale" on its own even though the fetched data never changes.
+function setRowStatus(els, when) {
+  if (!when) {
+    els.statusEl.textContent = "no data yet";
+    els.statusEl.className = "row-status";
+    return;
+  }
+  const ageMin = Math.round((Date.now() - when.getTime()) / 60000);
+  if (Date.now() - when.getTime() > STALE_THRESHOLD_MS) {
+    els.statusEl.textContent = "Stale · " + ageMin + "m ago";
+    els.statusEl.className = "row-status stale";
+  } else {
+    els.statusEl.textContent = "Live · " + (ageMin < 1 ? "just now" : ageMin + "m ago");
+    els.statusEl.className = "row-status";
+  }
+}
+
+// Every sensor gets manual CCT/Duv boxes for typing in a direct meter
+// reading -- useful any time the meter is actually in hand for that sensor
+// (e.g. a rented panel session covering more than just the reference unit),
+// not just for sensor-00-calibration-source. Every non-reference sensor
+// additionally gets the no-meter "vs sensor-00" button, for sessions where
+// the meter isn't available for it. Both are independent add-point calls
+// into the same calibration_points table -- ref_source records which kind
+// each point was, so a fit mixing both is fine.
+function calibFormMarkup(isReference) {
+  const vsRefButton = isReference
+    ? ""
+    : `<button class="calib-add-vs-ref" type="button">Add point vs ${REFERENCE_SENSOR_ID}</button>`;
+  return `
+    <input class="calib-cct" type="number" step="1" placeholder="meter CCT (K)" />
+    <input class="calib-duv" type="number" step="0.0001" placeholder="meter Duv" />
+    <input class="calib-note" type="text" placeholder="note, e.g. clear midday (optional)" />
+    <div class="calib-buttons">
+      <button class="calib-add" type="button">Add point (meter)</button>
+      ${vsRefButton}
+      <button class="calib-fit" type="button">Fit now</button>
+    </div>
+    <div class="calib-msg"></div>
+  `;
+}
+
+// Builds one sensor's DOM: a data row in the main table, a hidden
+// calibration detail row right after it (toggled open on request), and a
+// standalone compare-strip cell. Returns handles to everything that gets
+// updated on each poll tick.
+function buildSensorRow(sensorId, label) {
+  const isReference = sensorId === REFERENCE_SENSOR_ID;
+
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="checkbox" class="compare-check" checked /></td>
+    <td class="col-sensor">
+      <div class="sensor-id">${sensorId}</div>
+      ${label ? `<div class="sensor-sublabel">${label}</div>` : ""}
+    </td>
+    <td>
+      <div class="cct">--- K</div>
+      <div class="cal-note">—</div>
+    </td>
+    <td>
+      <div class="colour-cell">
+        <div class="colour-chip"></div>
+        <div class="colour-chip-text">
+          <div class="hex">#------</div>
+          <div class="swatch-cal-note">—</div>
+        </div>
+      </div>
+    </td>
+    <td class="tint">—</td>
+    <td class="diag">—</td>
+    <td class="battery">—</td>
+    <td class="solar">—</td>
+    <td class="time">—</td>
+    <td><span class="row-status">—</span></td>
+    <td>
+      <div class="calib-status-line">
+        <span class="calib-status">Calibration: —</span>
+        <button class="calib-toggle" type="button">Details ▾</button>
+      </div>
+    </td>
+  `;
+
+  const detailRow = document.createElement("tr");
+  detailRow.className = "calib-detail-row hidden";
+  detailRow.innerHTML = `<td colspan="11"><div class="calib-form">${calibFormMarkup(isReference)}</div></td>`;
+
+  const toggleBtn = row.querySelector(".calib-toggle");
+  toggleBtn.addEventListener("click", () => {
+    const nowHidden = detailRow.classList.toggle("hidden");
+    toggleBtn.textContent = nowHidden ? "Details ▾" : "Details ▲";
+  });
+
+  return {
+    row,
+    detailRow,
+    isReference,
+    checkboxEl: row.querySelector(".compare-check"),
+    cctEl: row.querySelector(".cct"),
+    calNoteEl: row.querySelector(".cal-note"),
+    chipEl: row.querySelector(".colour-chip"),
+    hexEl: row.querySelector(".hex"),
+    swatchCalNoteEl: row.querySelector(".swatch-cal-note"),
+    timeEl: row.querySelector(".time"),
+    statusEl: row.querySelector(".row-status"),
+    tintEl: row.querySelector(".tint"),
+    diagEl: row.querySelector(".diag"),
+    batteryEl: row.querySelector(".battery"),
+    solarEl: row.querySelector(".solar"),
+    calibStatusEl: row.querySelector(".calib-status"),
+    calibCctEl: detailRow.querySelector(".calib-cct"),
+    calibDuvEl: detailRow.querySelector(".calib-duv"),
+    calibNoteEl: detailRow.querySelector(".calib-note"),
+    calibAddBtn: detailRow.querySelector(".calib-add"),
+    calibAddVsRefBtn: detailRow.querySelector(".calib-add-vs-ref"),
+    calibFitBtn: detailRow.querySelector(".calib-fit"),
+    calibMsgEl: detailRow.querySelector(".calib-msg"),
+  };
+}
+
+// One flush-fitting colour cell per sensor in the comparison strip -- no
+// gap, no per-cell rounding, so the join between two sensors' hues is a
+// single sharp line rather than something broken up by column chrome.
+// Visibility is driven purely by the row's own checkbox (see wireCompareCheckbox),
+// so the strip scales to however many sensors are ticked, not a fixed count.
+function buildCompareCell(sensorId) {
+  const cell = document.createElement("div");
+  cell.className = "compare-cell";
+  cell.innerHTML = `
+    <div class="compare-cell-colour"></div>
+    <div class="compare-cell-label">${sensorId}</div>
+    <div class="compare-cell-calnote">—</div>
+  `;
+  return {
+    cell,
+    colourEl: cell.querySelector(".compare-cell-colour"),
+    calNoteEl: cell.querySelector(".compare-cell-calnote"),
+  };
+}
+
+function updateCompareLabel() {
+  const checkedCount = document.querySelectorAll(".compare-check:checked").length;
+  compareLabelEl.textContent = checkedCount > 0
+    ? "Side by side, no gap — for judging how close the hues actually are"
+    : "Tick sensors in the table below to compare their colours here, side by side";
+}
+
+function wireCompareCheckbox(els) {
+  const sync = () => {
+    els.compareCell.classList.toggle("hidden", !els.checkboxEl.checked);
+    updateCompareLabel();
+  };
+  els.checkboxEl.addEventListener("change", sync);
+  sync();
+}
+
+async function updateLatest(els, sensorId) {
+  try {
+    const resp = await fetch(API + "/api/latest?sensor_id=" + encodeURIComponent(sensorId));
+    const data = await resp.json();
+    if (data.error || data.cct == null) {
+      els.cctEl.textContent = "waiting…";
+      els.calNoteEl.textContent = "—";
+      setRowStatus(els, null);
+      return;
+    }
+
+    // Calibrated CCT (fit against a reference meter) is the headline number
+    // once a sensor has one; raw CCT is the fallback and always shown as a
+    // caption alongside it, so the diagnostics page never hides which number
+    // is which.
+    const hasCal = data.cct_cal != null;
+    els.cctEl.textContent = Math.round(hasCal ? data.cct_cal : data.cct) + " K";
+    els.calNoteEl.textContent = hasCal
+      ? "calibrated · raw " + Math.round(data.cct) + " K"
+      : "raw · uncalibrated";
+
+    // Measured colour from the stored chromaticity (true hue and tint) --
+    // calibrated x,y once a fit exists, since the raw reading is the biased
+    // one the C-800 calibration exists to correct, not the more truthful one.
+    // Below the reliability floor the chromaticity is noise, so the swatch
+    // shows "night" (#111) rather than a misleading vivid colour; the numeric
+    // CCT and Duv still display for diagnostics.
+    const lowLight = data.lux != null && data.lux < LUX_FLOOR;
+    const swatchHasCal = data.cie_x_cal != null && data.cie_y_cal != null;
+    const swatchX = swatchHasCal ? data.cie_x_cal : data.cie_x;
+    const swatchY = swatchHasCal ? data.cie_y_cal : data.cie_y;
+    let hex = null;
+    if (lowLight) {
+      hex = "#111111";
+      els.hexEl.textContent = "night";
+      els.swatchCalNoteEl.textContent = "—";
+      els.compareCalNoteEl.textContent = "—";
+    } else if (swatchX != null && swatchY != null) {
+      hex = rgbToHex(xyToRgb(swatchX, swatchY));
+      els.hexEl.textContent = hex.toUpperCase();
+      const calNote = swatchHasCal ? "calibrated" : "raw · uncalibrated";
+      els.swatchCalNoteEl.textContent = calNote;
+      els.compareCalNoteEl.textContent = calNote;
+    } else {
+      hex = "#eeeeee";
+      els.hexEl.textContent = "—";
+      els.swatchCalNoteEl.textContent = "—";
+      els.compareCalNoteEl.textContent = "—";
+    }
+    els.chipEl.style.backgroundColor = hex;
+    // Same computed hex feeds the side-by-side comparison strip, so the two
+    // views can never disagree due to being fetched at slightly different
+    // moments -- one fetch, both swatches.
+    els.compareColourEl.style.backgroundColor = hex;
+
+    // Server stores naive UTC strings ("2026-06-22 13:12:00"). Tell the
+    // browser it's UTC (replace space with "T", append "Z"), then render it
+    // in the viewer's own local timezone.
+    const when = new Date(data.timestamp.replace(" ", "T") + "Z");
+    els.timeEl.textContent = when.toLocaleString();
+    setRowStatus(els, when);
+
+    // Tint (Duv): how far off the blackbody locus the light sits — the axis CCT
+    // alone throws away. Positive is greenish (above the locus), negative is
+    // magenta/pink (below). Computed server-side from the measured x,y.
+    if (data.duv != null && !lowLight) {
+      const duvShown = data.duv_cal != null ? data.duv_cal : data.duv;
+      const sign = duvShown > 0 ? "+" : "";
+      const cast = Math.abs(duvShown) < 0.001
+        ? "near-neutral"
+        : (duvShown > 0 ? "greenish" : "magenta");
+      let text = sign + duvShown.toFixed(4) + " (" + cast + ")";
+      if (data.duv_cal != null) {
+        text += " · raw " + (data.duv > 0 ? "+" : "") + data.duv.toFixed(4);
+      }
+      els.tintEl.textContent = text;
+    } else if (lowLight) {
+      els.tintEl.textContent = "low light — below reliable floor";
+    } else {
+      els.tintEl.textContent = "—";
+    }
+
+    // Solar geometry, computed server-side from the reading's location and time.
+    // Null until the sensor's location has been registered. A negative elevation
+    // means the sun is below the horizon (night).
+    if (data.solar_elevation_deg != null) {
+      const elev = data.solar_elevation_deg.toFixed(1) + "°";
+      const azi = data.solar_azimuth_deg != null
+        ? data.solar_azimuth_deg.toFixed(0) + "°"
+        : "—";
+      const daynight = data.solar_elevation_deg >= 0 ? "day" : "night";
+      let loc = "";
+      if (data.latitude != null && data.longitude != null) {
+        loc = " · " + data.latitude.toFixed(4) + ", " + data.longitude.toFixed(4);
+      }
+      els.solarEl.innerHTML = elev + " elev (" + daynight + ") · " + azi + " azi" + loc;
+    } else {
+      els.solarEl.textContent = "location not set";
+    }
+  } catch (e) {
+    els.cctEl.textContent = "offline";
+    els.statusEl.textContent = "offline";
+    els.statusEl.className = "row-status stale";
+  }
+}
+
+// Live diagnostics from /api/diag (raw channels etc. — not stored in the DB),
+// scoped to this sensor so two units publishing concurrently don't clobber
+// each other's readout.
+async function updateDiag(els, sensorId) {
+  try {
+    const resp = await fetch(API + "/api/diag?sensor_id=" + encodeURIComponent(sensorId));
+    const d = await resp.json();
+    if (d.error) {
+      els.diagEl.textContent = "waiting…";
+      els.batteryEl.textContent = "";
+      return;
+    }
+    const lux = d.lux != null ? Math.round(d.lux).toLocaleString() : "—";
+    const xy = (d.cie_x != null && d.cie_y != null) ? d.cie_x + ", " + d.cie_y : "—";
+    const zx = d.zx_ratio != null ? d.zx_ratio : "—";
+    const overload = d.overload
+      ? '<span class="warn">YES — saturated!</span>'
+      : "no";
+    els.diagEl.innerHTML =
+      "Lux: " + lux + " · x,y: " + xy + " · Z/X: " + zx + " · Overload: " + overload;
+
+    if (d.battery_pct != null) {
+      const pct  = d.battery_pct.toFixed(1) + "%";
+      const volts = d.battery_v != null ? d.battery_v.toFixed(3) + "V" : "—";
+      const tempVal = d.battery_temp_c != null ? d.battery_temp_c.toFixed(1) + "°C" : "—";
+      const temp = d.temp_warning
+        ? '<span class="warn">' + tempVal + ' ⚠ HIGH TEMP</span>'
+        : tempVal;
+      els.batteryEl.innerHTML = pct + " · " + volts + " · " + temp;
+    } else {
+      els.batteryEl.textContent = "not connected";
+    }
+  } catch (e) {
+    els.diagEl.textContent = "offline";
+    els.batteryEl.textContent = "";
+  }
+}
+
+// Calibration token, if the backend has CALIBRATION_TOKEN set (see main.py --
+// open/no-op by default, so this is blank unless deliberately locked down).
+// Remembered in localStorage so it survives a page reload during a session.
+const tokenEl = document.getElementById("calib-token");
+tokenEl.value = localStorage.getItem("calibToken") || "";
+tokenEl.addEventListener("input", () => {
+  localStorage.setItem("calibToken", tokenEl.value);
+});
+
+function fmtDuv(v) {
+  return (v > 0 ? "+" : "") + v.toFixed(4);
+}
+
+async function updateCalibStatus(els, sensorId) {
+  try {
+    const resp = await fetch(API + "/api/calibration/status?sensor_id=" + encodeURIComponent(sensorId));
+    const data = await resp.json();
+    const n = data.points ? data.points.length : 0;
+    if (data.calibration) {
+      const c = data.calibration;
+      const rms = (c.rms_cct != null ? c.rms_cct.toFixed(1) + " K" : "—") +
+        " / " + (c.rms_duv != null ? c.rms_duv.toFixed(5) + " Duv" : "—");
+      els.calibStatusEl.textContent =
+        "Calibrated: " + n + " pt(s), RMS " + rms;
+    } else {
+      els.calibStatusEl.textContent =
+        n + " pt(s) captured — not fitted yet";
+    }
+  } catch (e) {
+    els.calibStatusEl.textContent = "Calibration: offline";
+  }
+}
+
+function setCalibMsg(els, text, isError) {
+  els.calibMsgEl.textContent = text;
+  els.calibMsgEl.className = "calib-msg " + (isError ? "err" : "ok");
+}
+
+function wireCalibForm(els, sensorId) {
+  // Direct meter entry -- wired for every sensor now, not just the reference
+  // unit (see calibFormMarkup).
+  els.calibAddBtn.addEventListener("click", async () => {
+    const cctRef = parseFloat(els.calibCctEl.value);
+    const duvRef = parseFloat(els.calibDuvEl.value);
+    if (!Number.isFinite(cctRef) || !Number.isFinite(duvRef)) {
+      setCalibMsg(els, "Enter both CCT and Duv from the meter.", true);
+      return;
+    }
+    els.calibAddBtn.disabled = true;
+    try {
+      const params = new URLSearchParams({
+        sensor_id: sensorId,
+        cct_ref: cctRef,
+        duv_ref: duvRef,
+        token: tokenEl.value,
+      });
+      if (els.calibNoteEl.value) params.set("note", els.calibNoteEl.value);
+      const resp = await fetch(API + "/api/calibration/add-point?" + params, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setCalibMsg(els, "Error: " + (data.error || resp.status), true);
+      } else {
+        setCalibMsg(
+          els,
+          "Added — device " + Math.round(data.cct_raw) + "K/" + fmtDuv(data.duv_raw) +
+            " vs meter " + Math.round(cctRef) + "K/" + fmtDuv(duvRef),
+          false,
+        );
+        els.calibCctEl.value = "";
+        els.calibDuvEl.value = "";
+        updateCalibStatus(els, sensorId);
+      }
+    } catch (e) {
+      setCalibMsg(els, "Error: request failed", true);
+    } finally {
+      els.calibAddBtn.disabled = false;
+    }
+  });
+
+  // No-meter "vs reference sensor" path -- only present (button exists) for
+  // non-reference sensors, per calibFormMarkup.
+  if (els.calibAddVsRefBtn) {
+    els.calibAddVsRefBtn.addEventListener("click", async () => {
+      els.calibAddVsRefBtn.disabled = true;
+      try {
+        const params = new URLSearchParams({
+          sensor_id: sensorId,
+          reference_sensor_id: REFERENCE_SENSOR_ID,
+          token: tokenEl.value,
+        });
+        if (els.calibNoteEl.value) params.set("note", els.calibNoteEl.value);
+        const resp = await fetch(API + "/api/calibration/add-point-vs-sensor?" + params, { method: "POST" });
+        const data = await resp.json();
+        if (!resp.ok) {
+          setCalibMsg(els, "Error: " + (data.error || resp.status), true);
+        } else {
+          setCalibMsg(
+            els,
+            "Added — device " + Math.round(data.cct_raw) + "K/" + fmtDuv(data.duv_raw) +
+              " vs " + REFERENCE_SENSOR_ID + " " + Math.round(data.cct_ref) + "K/" + fmtDuv(data.duv_ref),
+            false,
+          );
+          updateCalibStatus(els, sensorId);
+        }
+      } catch (e) {
+        setCalibMsg(els, "Error: request failed", true);
+      } finally {
+        els.calibAddVsRefBtn.disabled = false;
+      }
+    });
+  }
+
+  els.calibFitBtn.addEventListener("click", async () => {
+    els.calibFitBtn.disabled = true;
+    try {
+      const params = new URLSearchParams({ sensor_id: sensorId, token: tokenEl.value });
+      const resp = await fetch(API + "/api/calibration/fit?" + params, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setCalibMsg(els, "Error: " + (data.error || resp.status), true);
+      } else {
+        const rmsCct = data.rms_cct != null ? data.rms_cct.toFixed(1) : "—";
+        const rmsDuv = data.rms_duv != null ? data.rms_duv.toFixed(5) : "—";
+        setCalibMsg(
+          els,
+          "Fitted from " + data.n_points + " pt(s), RMS " +
+            rmsCct + "K/" + rmsDuv +
+            " — backfilled " + data.backfilled,
+          false,
+        );
+        updateCalibStatus(els, sensorId);
+        updateLatest(els, sensorId);  // headline CCT should reflect the new fit immediately
+      }
+    } catch (e) {
+      setCalibMsg(els, "Error: request failed", true);
+    } finally {
+      els.calibFitBtn.disabled = false;
+    }
+  });
+}
+
+async function init() {
+  let sensors = [];
+  try {
+    const resp = await fetch(API + "/api/sensors");
+    sensors = await resp.json();
+  } catch (e) {
+    statusEl.textContent = "Could not load sensor list — retrying…";
+    setTimeout(init, 5000);
+    return;
+  }
+
+  if (!Array.isArray(sensors) || sensors.length === 0) {
+    statusEl.textContent = "No sensors registered yet.";
+    setTimeout(init, 5000);
+    return;
+  }
+
+  statusEl.textContent = "";
+  sensorsBodyEl.innerHTML = "";
+  compareSwatchesEl.innerHTML = "";
+  for (const s of sensors) {
+    const els = buildSensorRow(s.sensor_id, s.label);
+    sensorsBodyEl.appendChild(els.row);
+    sensorsBodyEl.appendChild(els.detailRow);
+
+    const compareCell = buildCompareCell(s.sensor_id);
+    compareSwatchesEl.appendChild(compareCell.cell);
+    els.compareCell = compareCell.cell;
+    els.compareColourEl = compareCell.colourEl;
+    els.compareCalNoteEl = compareCell.calNoteEl;
+    wireCompareCheckbox(els);
+
+    wireCalibForm(els, s.sensor_id);
+    const tick = () => {
+      updateLatest(els, s.sensor_id);
+      updateDiag(els, s.sensor_id);
+      updateCalibStatus(els, s.sensor_id);
+    };
+    tick();
+    setInterval(tick, 5000);
+  }
+  updateCompareLabel();
+}
+
+init();
+</script>
+
+</body>
+</html>

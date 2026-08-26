@@ -1,0 +1,27 @@
+# Copy this file to `settings.toml` and fill in real values.
+# CircuitPython reads settings.toml automatically into os.getenv().
+# The real settings.toml is gitignored so credentials stay off GitHub.
+
+# Primary network. CircuitPython's web workflow auto-connects to this one at
+# boot, so it should be whichever network you want to flash the board over.
+CIRCUITPY_WIFI_SSID = "your-wifi-name"
+CIRCUITPY_WIFI_PASSWORD = "your-wifi-password"
+
+# Optional fallback networks, tried by code.py in order if the primary is
+# unreachable (e.g. a phone hotspot as primary, home WiFi as backup). Leave
+# unset for a single-network setup. _3 is also supported.
+# CIRCUITPY_WIFI_SSID_2 = "backup-wifi-name"
+# CIRCUITPY_WIFI_PASSWORD_2 = "backup-wifi-password"
+
+MQTT_BROKER = "broker.example.com"        # your broker host or IP
+MQTT_USERNAME = "feather"
+MQTT_PASSWORD = "your-mqtt-password"
+
+SENSOR_ID = "sensor-01"
+
+# Over-the-air firmware pull (optional). When set, the board downloads a newer
+# code.py from the Droplet on its own, so you can update it from anywhere —
+# no need to be on the home Wi-Fi. Leave unset to disable OTA and rely only on
+# LAN wireless flashing. Requires adafruit_requests.mpy in lib/.
+OTA_BASE_URL = "https://your-server.example.com/firmware"
+# OTA_TOKEN = "shared-secret"   # only if you set OTA_TOKEN on the server

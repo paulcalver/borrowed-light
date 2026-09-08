@@ -354,6 +354,29 @@ function rgbToHex([r, g, b]) {
   return "#" + h(r) + h(g) + h(b);
 }
 
+// Ages here span seconds (a unit publishing on its 30s cadence) to weeks
+// (a unit parked offline between builds), so the unit steps up instead of
+// counting minutes forever -- "18540m ago" tells you nothing at a glance.
+// The coarser the age, the less the fine detail matters, so the second
+// term is dropped once we're past a week.
+function formatAge(ms) {
+  const secs = Math.max(0, Math.round(ms / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return mins + "m ago";
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    const remMins = mins - hours * 60;
+    return remMins ? hours + "h " + remMins + "m ago" : hours + "h ago";
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    const remHours = hours - days * 24;
+    return remHours ? days + "d " + remHours + "h ago" : days + "d ago";
+  }
+  return days + "d ago";
+}
+
 // Recomputed against the current time on every poll tick (not just when a
 // new reading arrives), so a sensor that's gone quiet visibly ages into
 // "Stale" on its own even though the fetched data never changes.
@@ -363,12 +386,12 @@ function setRowStatus(els, when) {
     els.statusEl.className = "row-status";
     return;
   }
-  const ageMin = Math.round((Date.now() - when.getTime()) / 60000);
-  if (Date.now() - when.getTime() > STALE_THRESHOLD_MS) {
-    els.statusEl.textContent = "Stale · " + ageMin + "m ago";
+  const age = Date.now() - when.getTime();
+  if (age > STALE_THRESHOLD_MS) {
+    els.statusEl.textContent = "Stale · " + formatAge(age);
     els.statusEl.className = "row-status stale";
   } else {
-    els.statusEl.textContent = "Live · " + (ageMin < 1 ? "just now" : ageMin + "m ago");
+    els.statusEl.textContent = "Live · " + formatAge(age);
     els.statusEl.className = "row-status";
   }
 }
